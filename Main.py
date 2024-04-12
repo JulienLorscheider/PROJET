@@ -67,141 +67,74 @@ def is_piece_threatened(board, row, col, color):
             return True
     return False
 
-def evaluate_threats_and_protections(board):
-    threats_and_protections = {
-        'N': {'threatened': [], 'protected': [], 'threatened_protected': [], 'safe_captures': [], 'risky_captures': []},
-        'B': {'threatened': [], 'protected': [], 'threatened_protected': [], 'safe_captures': [], 'risky_captures': []}
-    }
-
-    for row in range(4):
-        for col in range(4):
-            piece = board.get_piece(row, col)
-            if not piece:
-                continue
-            
-            # Check for threats and protections
-            for move in piece.get_moves(board, row, col):
-                target_row, target_col = move
-                target_piece = board.get_piece(target_row, target_col)
-                if target_piece and target_piece.color != piece.color:
-                    if target_piece not in threats_and_protections[target_piece.color]['protected']:
-                        threats_and_protections[target_piece.color]['threatened'].append(target_piece)
-                    else:
-                        if target_piece not in threats_and_protections[target_piece.color]['threatened_protected']:
-                            threats_and_protections[target_piece.color]['threatened_protected'].append(target_piece)
-                elif target_piece and target_piece.color == piece.color:
-                    threats_and_protections[piece.color]['protected'].append(target_piece)
-
-    for row in range(4):
-        for col in range(4):
-            piece = board.get_piece(row, col)
-            if not piece:
-                continue
-            
-            potential_moves = piece.get_moves(board, row, col)
-            for move in potential_moves:
-                target_row, target_col = move
-                target_piece = board.get_piece(target_row, target_col)
-                if not target_piece:
-                    continue
-                if target_piece.color != piece.color:
-                    # Vérifie si la pièce attaquante serait menacée après avoir effectué la capture
-                    board_copy = board.copy()
-                    board_copy.move_piece(row, col, target_row, target_col)
-                    if is_piece_threatened(board_copy, target_row, target_col, target_piece.color):
-                        # Si la pièce serait menacée, c'est une capture risquée
-                        threats_and_protections[piece.color]['risky_captures'].append(target_piece)
-                    else:
-                        # Sinon, c'est une capture sans risque
-                        threats_and_protections[piece.color]['safe_captures'].append(target_piece)
-
-    return threats_and_protections
+# Attribuer des valeurs à chaque type de pièce
+piece_value = {'P': 1, 'C': 3, 'F': 3, 'T': 5, 'Q': 9, 'K': 1000}
 
 def evaluate_board(board, maximizing_player):
-    piece_value = {'P': 1, 'C': 3, 'F': 3, 'T': 5, 'Q': 9, 'K': 1000}
+    # Initialiser les scores pour le joueur maximisant (IA) et minimisant (humain)
+    max_player_score = 0
+    min_player_score = 0
 
-    # Paramètres d'évaluation
-    threat_penalty = 10  # Pénalité pour une pièce menacée
-    protection_bonus = 3  # Bonus pour une pièce protégée
-    threatened_protected_bonus = 2  # Bonus pour une pièce menacée mais protégée
+    # Couleur des joueurs
+    max_color = 'N' if maximizing_player else 'B'
+    min_color = 'B' if maximizing_player else 'N'
 
-    safe_capture_bonus = 10
-    risky_capture_penalty = 10
-
-    # Récupération des menaces et protections
-    tp_info = evaluate_threats_and_protections(board)
-
-    king_safety_penalty = 100
-    black_score, white_score = 0, 0
-    friend_proximity_bonus = 5
-    pawn_cover_bonus = 10
-    mobility_weight = 0.1
-
+    # Analyser chaque case du plateau
     for row in range(4):
         for col in range(4):
             piece = board.get_piece(row, col)
-            if not piece:
-                continue
-
             if piece:
-                moves = piece.get_moves(board, row, col)
-                mobility_score = len(moves) * mobility_weight
+                # Calcul de la valeur de base de la pièce basée sur son type
+                base_value = piece_value[piece.name]
 
-                if piece.color == 'N':  # Noir
-                    black_score += piece_value[piece.name] + mobility_score
-                else:  # Blanc
-                    white_score += piece_value[piece.name] + mobility_score
+                # Ajouter la valeur de la pièce au score du joueur approprié
+                if piece.color == max_color:
+                    max_player_score += base_value
+                else:
+                    min_player_score += base_value
 
-            # Base score
-            base_score = piece_value[piece.name]
-            color_multiplier = 1 if piece.color == 'N' else -1# Ajustements pour les menaces et protections
-            
-            if piece in tp_info[piece.color]['threatened']:
-                base_score -= threat_penalty
-            if piece in tp_info[piece.color]['protected']:
-                base_score += protection_bonus
-            if piece in tp_info[piece.color]['threatened_protected']:
-                base_score += threatened_protected_bonus
-            if piece in tp_info[piece.color]['safe_captures']:
-                base_score += safe_capture_bonus
-            if piece in tp_info[piece.color]['risky_captures']:
-                base_score -= risky_capture_penalty
+                # Calculer l'impact de la position de la pièce
+                position_score = evaluate_position(piece, row, col)
+                if piece.color == max_color:
+                    max_player_score += position_score
+                else:
+                    min_player_score += position_score
 
-            # Adjust score for proximity of friendly pieces
-            for drow in [-1, 0, 1]:
-                for dcol in [-1, 0, 1]:
-                    if drow == 0 and dcol == 0:
-                        continue  # Skip the piece itself
-                    adj_row, adj_col = row + drow, col + dcol
-                    if 0 <= adj_row < 4 and 0 <= adj_col < 4:
-                        adj_piece = board.get_piece(adj_row, adj_col)
-                        if adj_piece and adj_piece.color == piece.color:
-                            base_score += friend_proximity_bonus
+                # Évaluer les menaces et les protections
+                threats, protections = evaluate_threats_and_protections(board, piece, row, col)
+                if piece.color == max_color:
+                    max_player_score += threats - protections
+                else:
+                    min_player_score += threats - protections
 
-            # King specific checks
-            if isinstance(piece, King.King):
-                if is_in_check((row, col), board):
-                    base_score -= king_safety_penalty
+    # Calculer le score final en soustrayant le score du joueur minimisant de celui du joueur maximisant
+    return max_player_score - min_player_score
 
-                # Pawn cover bonus
-                for cover_row in [row + 1, row - 1]:  # Forward and backward for king
-                    for cover_col in [col - 1, col, col + 1]:
-                        if 0 <= cover_row < 4 and 0 <= cover_col < 4:
-                            cover_piece = board.get_piece(cover_row, cover_col)
-                            if isinstance(cover_piece, Pawn.Pawn) and cover_piece.color == piece.color:
-                                base_score += pawn_cover_bonus
+def evaluate_position(piece, row, col):
+    # Modifier ce score en fonction de la stratégie, par exemple, centralisation des pièces
+    center_positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
+    if (row, col) in center_positions:
+        return 0.5  # Bonus pour être au centre
+    return 0
 
-            # Add to total score
-            if piece.color == 'N':
-                black_score += base_score * color_multiplier
-            else:
-                white_score += base_score * color_multiplier
+def evaluate_threats_and_protections(board, piece, row, col):
+    threats = 0
+    protections = 0
+    potential_threats = board.get_all_opponent_moves(piece.color)  # Ceci devrait retourner une liste de tuples (row, col)
 
-    # Final score adjustment
-    if maximizing_player:
-        return black_score - white_score if board.ia_color == 'N' else white_score - black_score
-    else:
-        return white_score - black_score if board.ia_color == 'N' else black_score - white_score
+    # Vérifier chaque mouvement d'opposant pour voir s'il menace la position actuelle de la pièce
+    for threat_row, threat_col in potential_threats:
+        if threat_row == row and threat_col == col:
+            threats += piece_value[piece.name] * 0.5  # Pénalité pour être menacé
+
+    # Vérifier les mouvements de la pièce pour voir s'ils peuvent protéger d'autres pièces
+    own_moves = piece.get_moves(board, row, col)
+    for move_row, move_col in own_moves:
+        target_piece = board.get_piece(move_row, move_col)
+        if target_piece and target_piece.color == piece.color:
+            protections += piece_value[target_piece.name] * 0.3  # Bonus pour protéger une pièce
+
+    return threats, protections
 
 def alpha_beta(board, depth, alpha, beta, maximizing_player):
     if depth == 0 or game_over(board, variant, is_simulation=True):
@@ -237,7 +170,7 @@ def ai_turn(board):
     for move in board.get_all_possible_moves('N'):  # 'N' pour l'IA
         board_copy = board.copy()
         board_copy.move_piece(move['start_row'], move['start_col'], move['end_row'], move['end_col'], is_real_move=False)
-        move_value = alpha_beta(board_copy, 3, float('-inf'), float('inf'), False)
+        move_value = alpha_beta(board_copy, 5, float('-inf'), float('inf'), False)
         if move_value > best_value:
             best_value = move_value
             best_move = move
@@ -271,7 +204,7 @@ def game_over(board, variant, is_simulation=False):
         return True
 
     # Conditions spécifiques à chaque variante
-    if (variant == 1 or variant == 2) and board.moves_without_capture >= 5:
+    if (variant == 1 or variant == 2) and board.total_moves_without_capture >= 5:
         # Calculer la somme des valeurs des pièces restantes pour chaque joueur
         white_value = sum(piece.value for piece in white_pieces)
         black_value = sum(piece.value for piece in black_pieces)
@@ -350,19 +283,27 @@ def initial_piece_placement(board, variant):
               '2': ['T', 'F', 'C', 'P'],
               '3': ['T', 'F', 'C', 'K']}
 
-    for piece_symbol in pieces[str(variant)]:
-        valid_placement = False
-        while not valid_placement:
-            board.display()
-            row, col = get_valid_coords(f"Où souhaitez-vous placer votre {piece_symbol}? (format: ligne,colonne de 0 à 3): ")
-            piece_class = piece_classes[piece_symbol]
-            pieceB = piece_class('B')
-            pieceN = piece_class('N')
-            if board.place_piece(pieceB, row, col):
-                valid_placement = True
-            else:
-                print("Placement invalide, veuillez réessayer.")
-        initial_piece_placement_ai(board, pieceN)
+    remaining_pieces = pieces[str(variant)].copy()  # Copie de la liste des pièces pour cette variante
+
+    while remaining_pieces:
+        board.display()
+        print(f"Pièces restantes à placer: {', '.join(remaining_pieces)}")
+        piece_symbol = input("Choisissez une pièce à placer (par exemple 'Q' pour une Reine): ").upper()
+
+        if piece_symbol in remaining_pieces:
+            valid_placement = False
+            while not valid_placement:
+                row, col = get_valid_coords(f"Où souhaitez-vous placer votre {piece_symbol}? (format: ligne,colonne de 0 à 3): ")
+                piece_class = piece_classes[piece_symbol]
+                pieceB = piece_class('B')  # Pièce du joueur humain
+                if board.place_piece(pieceB, row, col):
+                    valid_placement = True
+                    remaining_pieces.remove(piece_symbol)  # Enlève la pièce de la liste des pièces restantes
+                    initial_piece_placement_ai(board, piece_class('N'))  # Place une pièce pour l'IA
+                else:
+                    print("Placement invalide, veuillez réessayer.")
+        else:
+            print("Pièce non valide ou déjà placée. Veuillez choisir une pièce disponible.")
 
 
 def is_in_check(king_position, board):

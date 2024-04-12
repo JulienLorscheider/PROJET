@@ -3,12 +3,16 @@ from piece.Piece import Piece
 class Board:
     def __init__(self, ia_color='N'):
         self.grid = [[None for _ in range(4)] for _ in range(4)]
-        self.moves_without_capture = 0
-        self.ia_color = ia_color  # Ajout de l'attribut ia_color
+        self.moves_without_capture = 0  # Compteur de mouvements sans capture consécutifs
+        self.total_moves_without_capture = 0  # Total des mouvements sans capture non consécutifs
+        self.ia_color = ia_color
 
     def display(self):
         for row in self.grid:
+            print(' - - - - ')
             print('|' + '|'.join([' ' if piece is None else str(piece) for piece in row]) + '|')
+
+        print(' - - - - ')
 
     def place_piece(self, piece, row, col):
         if 0 <= row < 4 and 0 <= col < 4 and self.grid[row][col] is None and isinstance(piece, Piece):
@@ -38,9 +42,10 @@ class Board:
             if moving_piece is not None and (target_piece is None or moving_piece.color != target_piece.color):
                 self.grid[end_row][end_col] = moving_piece
                 self.grid[start_row][start_col] = None
-                    
+                
                 if target_piece is None and is_real_move:
                     self.moves_without_capture += 1
+                    self.total_moves_without_capture += 1
                 elif target_piece is not None and is_real_move:
                     self.moves_without_capture = 0
                     
