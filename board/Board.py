@@ -26,6 +26,22 @@ class Board:
         else:
             return None
         
+    def get_piece_by_name_and_color(self, name, color):
+        for row in range(4):
+            for col in range(4):
+                piece = self.get_piece(row, col)
+                if piece and piece.name == name and piece.color == color:
+                    return piece
+        return None
+        
+    def get_piece_position(self, piece):
+        """Find the position of a piece on the board."""
+        for row in range(4):
+            for col in range(4):
+                if self.get_piece(row, col) == piece:
+                    return (row, col)
+        return None
+        
     def get_present_pieces(self, color):
         pieces = set()
         for row in self.grid:

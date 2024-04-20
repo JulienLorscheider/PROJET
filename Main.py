@@ -22,6 +22,26 @@ def choose_first_player():
         else:
             print("Choix invalide. Veuillez entrer 1 ou 2.")
 
+def is_position_under_threat(board, row, col, color):
+    # Inverse la couleur pour identifier les mouvements de l'adversaire
+    opponent_color = 'N' if color == 'B' else 'B'
+    opponent_moves = board.get_all_possible_moves(opponent_color)
+    for move in opponent_moves:
+        if move['end_row'] == row and move['end_col'] == col:
+            return True
+    return False
+
+def is_king_too_close(board, row, col, color):
+    # Vérifie toutes les cases autour de la position pour un autre roi
+    directions = [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1), (0, 0)]
+    for dr, dc in directions:
+        r, c = row + dr, col + dc
+        if 0 <= r < 4 and 0 <= c < 4:
+            piece = board.get_piece(r, c)
+            if piece and piece.name == 'K' and piece.color != color:
+                return True
+    return False
+
 def choose_game_variant():
     print("Choisissez une variante de jeu :")
     print("1. Reine - Tour - Fou - Cavalier")
@@ -39,38 +59,65 @@ variant = choose_game_variant()
 
 def player_turn(board, variant):
     print("Votre tour.")
+    king_position = board.get_piece_position(board.get_piece_by_name_and_color('K', 'B'))
+    king_in_check = is_in_check(king_position, board, variant)
+
+    if king_in_check:
+        print("Attention: Votre roi est en échec! Vous devez le protéger.")
 
     present_pieces = board.get_present_pieces('B')  # Supposons que 'B' représente le joueur humain
-
-    if variant == 1:
-        options = "".join([p for p in ['Q', 'T', 'F', 'C'] if p in present_pieces])
-    elif variant == 2:
-        options = "".join([p for p in ['T', 'F', 'C', 'P'] if p in present_pieces])
-    elif variant == 3:
-        options = "".join([p for p in ['T', 'F', 'C', 'K'] if p in present_pieces])
-    
-    print(f"Choisissez une pièce à déplacer ({options}): ")
-
-    while True:
-        piece_choice = input().strip().upper()
-
-        if piece_choice not in present_pieces:
-            print("Pièce non valide ou non présente sur le plateau. Veuillez choisir une pièce valide.")
-            continue  # Demander à nouveau
-
-        start_row, start_col = get_valid_coords("Entrez la position actuelle de la pièce (format: ligne,colonne): ")
-
-        end_row, end_col = get_valid_coords("Entrez la nouvelle position de la pièce (format: ligne,colonne): ")
-
-        piece = board.get_piece(start_row, start_col)
-        if piece and piece.name == piece_choice and (end_row, end_col) in piece.get_moves(board, start_row, start_col):
-            board.move_piece(start_row, start_col, end_row, end_col)
-            print("Mouvement effectué.")
-            break
-        else:
-            print("Mouvement invalide. Veuillez essayer à nouveau.")
+    if king_in_check:
+        moves_that_protect_king = get_legal_moves_that_protect_king(board, king_position, 'B', variant)
+        if not moves_that_protect_king:
+            print("Aucun mouvement légal disponible, vous êtes en échec et mat.")
+            return  # Vous pouvez choisir de gérer le fin du jeu ici
+        piece_choice, start_row, start_col, end_row, end_col = player_choose_move(moves_that_protect_king)
+        board.move_piece(start_row, start_col, end_row, end_col)
+        print("Mouvement effectué pour protéger le roi.")
+    else:
+        options = "".join([p for p in ['Q', 'T', 'F', 'C', 'P', 'K'] if p in present_pieces])
+        print(f"Choisissez une pièce à déplacer ({options}): ")
+        while True:
+            piece_choice = input().strip().upper()
+            if piece_choice in present_pieces:
+                start_row, start_col = get_valid_coords("Entrez la position actuelle de la pièce (format: ligne,colonne): ")
+                end_row, end_col = get_valid_coords("Entrez la nouvelle position de la pièce (format: ligne,colonne): ")
+                piece = board.get_piece(start_row, start_col)
+                if piece and piece.name == piece_choice and (end_row, end_col) in piece.get_moves(board, start_row, start_col):
+                    board.move_piece(start_row, start_col, end_row, end_col)
+                    print("Mouvement effectué.")
+                    break
+                else:
+                    print("Mouvement invalide. Veuillez essayer à nouveau.")
+            else:
+                print("Pièce non valide ou non présente sur le plateau. Veuillez choisir une pièce valide.")
 
     board.display()
+
+def get_legal_moves_that_protect_king(board, king_position, color, variant):
+    legal_moves = []
+    for move in board.get_all_possible_moves(color):
+        board_copy = board.copy()
+        board_copy.move_piece(move['start_row'], move['start_col'], move['end_row'], move['end_col'], is_real_move=False)
+        new_king_position = king_position
+        if move['piece'].name == 'K':
+            new_king_position = (move['end_row'], move['end_col'])
+        if not is_in_check(new_king_position, board_copy, variant):
+            legal_moves.append(move)
+    return legal_moves
+
+def player_choose_move(moves):
+    print("Vous avez des mouvements spécifiques pour sortir de l'échec:")
+    for i, move in enumerate(moves, 1):
+        print(f"{i}: Déplacez {move['piece'].name} de ({move['start_row']},{move['start_col']}) à ({move['end_row']},{move['end_col']})")
+
+    while True:
+        choice = input("Choisissez un mouvement par son numéro: ")
+        if choice.isdigit() and 1 <= int(choice) <= len(moves):
+            selected_move = moves[int(choice) - 1]
+            return selected_move['piece'].name, selected_move['start_row'], selected_move['start_col'], selected_move['end_row'], selected_move['end_col']
+        else:
+            print("Choix invalide. Veuillez entrer un numéro valide.")
 
 def is_piece_threatened(board, row, col, color):
     opponent_color = 'N' if color == 'B' else 'B'
@@ -166,26 +213,38 @@ def move_captures_safely(board, move):
             return True
     return False
 
-def ai_turn(board):
-    best_move = None
-    capture_move = None
-    best_value = float('-inf')
-    for move in board.get_all_possible_moves('N'):  # 'N' pour l'IA
-        board_copy = board.copy()
-        board_copy.move_piece(move['start_row'], move['start_col'], move['end_row'], move['end_col'], is_real_move=False)
-        move_value = alpha_beta(board_copy, 5, float('-inf'), float('inf'), False)
-        if move_value > best_value:
-            best_value = move_value
-            best_move = move
+def ai_turn(board, variant):
+    king_position = board.get_piece_position(board.get_piece_by_name_and_color('K', 'N'))  # 'N' pour l'IA
+    king_in_check = is_in_check(king_position, board, variant)
 
-    if capture_move:  # Si un mouvement de capture est disponible, l'exécuter
-        best_move = capture_move
+    if king_in_check:
+        print("Le roi de l'IA est en échec. L'IA doit protéger le roi.")
+        moves_that_protect_king = get_legal_moves_that_protect_king(board, king_position, 'N', variant)
+
+        if not moves_that_protect_king:
+            print("L'IA est en échec et mat. Le jeu est terminé.")
+            return  # Vous pouvez choisir de gérer le fin du jeu ici
+
+        # Choisissez le meilleur mouvement pour protéger le roi
+        best_move = max(moves_that_protect_king, key=lambda move: evaluate_position(board.get_piece(move['start_row'], move['start_col']), move['end_row'], move['end_col']))
+    else:
+        # Si le roi n'est pas en échec, procéder normalement
+        best_move = None
+        best_value = float('-inf')
+        for move in board.get_all_possible_moves('N'):
+            board_copy = board.copy()
+            board_copy.move_piece(move['start_row'], move['start_col'], move['end_row'], move['end_col'], is_real_move=False)
+            move_value = alpha_beta(board_copy, 3, float('-inf'), float('inf'), False)  # Profondeur réduite pour simplification
+            if move_value > best_value:
+                best_value = move_value
+                best_move = move
 
     if best_move:
         board.move_piece(best_move['start_row'], best_move['start_col'], best_move['end_row'], best_move['end_col'])
         print("L'IA a effectué son mouvement.")
-    
-    board.display()
+        board.display()
+    else:
+        print("Aucun mouvement légal trouvé pour l'IA.")
 
 
 def game_over(board, variant, is_simulation=False):
@@ -220,25 +279,36 @@ def game_over(board, variant, is_simulation=False):
         print(f"Fin de la partie après 5 mouvements sans prise. {winner} gagne avec la plus haute valeur de pièces.")
         return True
     elif variant == 3:
-        for row in range(4):
-            for col in range(4):
-                piece = board.get_piece(row, col)
-                if piece and piece.name == 'K':
-                    king_position = (row, col)
-                    king = piece
+        # Assuming 'N' is AI and 'B' is human
+        for color, pieces in [('N', black_pieces), ('B', white_pieces)]:
+            king = next((p for p in pieces if p.name == 'K'), None)
+            if king:
+                king_position = board.get_piece_position(king)
+                in_check = is_in_check(king_position, board, variant)
+                legal_moves = has_legal_moves(board, king, king_position)
+                all_moves = all_possible_moves_for_color(board, color)
 
-        in_check = is_in_check(king_position, board)
-        legal_moves = has_legal_moves(board, king, king_position)
-
-        if in_check and not legal_moves:
-            print(f"Échec et mat. {'Blanc' if king.color == 'N' else 'Noir'} perd.")
-            return True
-        elif not in_check and not legal_moves:
-            print("Pat. Match nul.")
-            return True
+                if not all_moves:  # No legal moves for all pieces
+                    if in_check:
+                        print(f"Échec et mat. {'Blanc' if color == 'N' else 'Noir'} perd.")
+                    else:
+                        print("Pat. Match nul.")
+                    return True
 
     # Aucune condition de fin de jeu n'est remplie
     return False
+
+def all_possible_moves_for_color(board, color):
+    """Check if there are any legal moves available for the given color."""
+    moves = []
+    for row in range(4):
+        for col in range(4):
+            piece = board.get_piece(row, col)
+            if piece and piece.color == color:
+                legal_moves = piece.get_moves(board, row, col)
+                if legal_moves:
+                    moves.extend(legal_moves)
+    return moves
 
 def evaluate_capture_safety(board, piece, target, start_row, start_col, target_row, target_col):
     """
@@ -296,15 +366,17 @@ def initial_piece_placement_ai(board, piece):
     best_move = None
     for row in range(4):
         for col in range(4):
-            if board.grid[row][col] is None:
+            if board.grid[row][col] is None and (piece.name != 'K' or (not is_position_under_threat(board, row, col, piece.color) and not is_king_too_close(board, row, col, piece.color))):
                 score = evaluate_placement_advanced(board, piece, row, col)
                 if score > best_score:
                     best_score = score
                     best_move = (row, col)
     if best_move:
         board.place_piece(piece, best_move[0], best_move[1])
-        return best_move  # Retourne la position pour affichage
-    return None
+        print(f"{piece.name} placé par l'IA à {best_move}.")
+    else:
+        print("Aucun emplacement sécurisé trouvé pour le roi par l'IA.")
+    return best_move
 
 def initial_piece_placement(board, variant, first_player):
     piece_classes = {'Q': Queen.Queen, 'T': Rook.Rook, 'F': Bishop.Bishop, 'C': Knight.Knight, 'P': Pawn.Pawn, 'K': King.King}
@@ -344,22 +416,31 @@ def player_choose_piece(remaining_pieces):
             return choice
         print("Choix non valide, veuillez choisir une pièce disponible.")
 
+def player_choose_move(moves):
+    print("Options pour protéger le roi :")
+    for i, move in enumerate(moves):
+        print(f"{i+1}: Déplacer {move['piece'].name} de ({move['start_row']},{move['start_col']}) à ({move['end_row']},{move['end_col']})")
+    choice = int(input("Choisissez un mouvement par son numéro : "))
+    return moves[choice-1]['piece'].name, moves[choice-1]['start_row'], moves[choice-1]['start_col'], moves[choice-1]['end_row'], moves[choice-1]['end_col']
+
 def player_placement(board, piece, piece_symbol):
     while True:
         print(f"Placez votre {piece_symbol} (par exemple '0,0') :")
         row, col = get_valid_coords("Format: ligne,colonne de 0 à 3: ")
+        if piece_symbol == 'K' and (is_position_under_threat(board, row, col, piece.color) or is_king_too_close(board, row, col, piece.color)):
+            print("Placement invalide. Le roi ne peut être mis en échec ou à côté d'un autre roi.")
+            continue
         if board.place_piece(piece, row, col):
             print(f"{piece_symbol} placé à {row},{col}.")
             break
         else:
             print("Placement invalide, veuillez réessayer.")
 
-def is_in_check(king_position, board):
-    directions = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1)]  # Directions pour lignes, colonnes, diagonales
-    for direction in directions:
-        if is_path_clear(king_position, direction, board):
-            return True
-    return False
+def is_in_check(position, board, variant):
+    # Exclure la vérification d'échec pour les variantes sans roi
+    if variant in [1, 2]:
+        return False
+    return is_position_under_threat(board, position[0], position[1], 'B')  # 'B' pour Blanc
 
 def is_path_clear(king_position, direction, board):
     dx, dy = direction
@@ -429,7 +510,7 @@ def play_game(variant):
         if player_turn_v:
             player_turn(board, variant)
         else:
-            ai_turn(board)
+            ai_turn(board, variant)
         player_turn_v = not player_turn_v
 
 play_game(variant)
